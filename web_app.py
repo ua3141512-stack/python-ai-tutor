@@ -18,7 +18,7 @@ if api_key_input:
         
         # SIZNING HISOBINGIZDA MAVJUD BO'LGAN ANIQ MODEL:
         # 'models/' prefiksi bilan yozish xatolikni oldini oladi
-        model = genai.GenerativeModel('models/gemini-2.0-flash')
+        model = genai.GenerativeModel('models/gemini-1.5-flash-8b')
 
         col1, col2 = st.columns([1, 1])
         with col1:
