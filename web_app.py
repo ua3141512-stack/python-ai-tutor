@@ -1,52 +1,53 @@
 import streamlit as st
 import google.generativeai as genai
 
-# Sahifa sozlamalari
 st.set_page_config(page_title="AI Python Tutor", layout="wide")
 st.title("🎓 Intellektual Python Repetitori")
 
 with st.sidebar:
     st.header("⚙️ Sozlamalar")
-    # Yangi API keyni (AIzaSyC...) probellarsiz kiriting
     api_key_input = st.text_input("Gemini API Key:", type="password").strip()
-    st.write("Dasturchi: Jaloliddin")
 
 if api_key_input:
     try:
-        # API ni sozlash
         genai.configure(api_key=api_key_input)
         
-        # ENG BARQAROR MODEL: 'gemini-pro'
-        # Bu model barcha kutubxona versiyalarida mavjud
-        model = genai.GenerativeModel('gemini-pro')
-
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            kod = st.text_area("Python kodingizni kiriting:", height=300)
-            if st.button("Tahlil qilish 🔍"):
-                if not kod.strip():
-                    st.warning("Iltimos, avval kod yozing!")
-                else:
-                    # 1. Kodni tekshirish
-                    xato_matni = "Xato topilmadi"
+        # Mavjud modellarni tekshirish (Xatolikni aniqlash uchun)
+        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        
+        # Eng yaxshi modelni tanlash
+        selected_model = None
+        for target in ['models/gemini-1.5-flash', 'models/gemini-pro', 'models/gemini-1.0-pro']:
+            if target in available_models:
+                selected_model = target
+                break
+        
+        if selected_model:
+            model = genai.GenerativeModel(selected_model)
+            
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                kod = st.text_area("Python kodingizni kiriting:", height=300)
+                if st.button("Tahlil qilish 🔍"):
+                    xato_matni = "Xato yo'q"
                     try:
                         exec(kod, {})
                     except Exception as e:
                         xato_matni = f"{type(e).__name__}: {str(e)}"
                     
-                    # 2. AI dan javob olish
-                    with st.spinner('AI bilan bog\'lanmoqda...'):
+                    with st.spinner(f'{selected_model} bilan tahlil qilinmoqda...'):
                         try:
-                            prompt = f"Talaba kodi: {kod}\nXato: {xato_matni}\nO'zbek tilida Sokratik savol ber."
-                            response = model.generate_content(prompt)
-                            
+                            response = model.generate_content(f"Kod: {kod}\nXato: {xato_matni}\nO'zbekcha Sokratik savol ber.")
                             with col2:
                                 st.subheader("🤖 AI javobi:")
                                 st.success(response.text)
                         except Exception as ai_err:
-                            st.error(f"AI model bilan bog'lanishda muammo: {ai_err}")
-                            st.info("Eslatma: Google AI Studio'da 'Gemini API' xizmati yoqilganini (Enabled) tekshiring.")
+                            st.error(f"AI xatosi: {ai_err}")
+        else:
+            st.error("Hisobingizda birorta ham foydalanish mumkin bo'lgan model topilmadi.")
+            st.write("Mavjud modellar:", available_models)
+            
     except Exception as e:
         st.error(f"Tizim xatosi: {e}")
 else:
-    st.warning("⚠️ Yangi API Keyni (AIzaSyC...) kiriting!")
+    st.warning("⚠️ API Key kiriting!")
