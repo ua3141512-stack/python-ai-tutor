@@ -10,7 +10,7 @@ st.info("Kodingizni tahlil qiling va sun'iy intellektdan metodik yordam oling.")
 # 2. Sidebar - Sozlamalar
 with st.sidebar:
     st.header("⚙️ Sozlamalar")
-    # .strip() kiritilgan bo'shliqlarni avtomatik o'chiradi
+    # API Keyni kiritish joyi
     api_key_input = st.text_input("Gemini API Key:", type="password").strip()
     st.markdown("---")
     st.write("Dasturchi: Jaloliddin")
@@ -21,8 +21,8 @@ if api_key_input:
         # API ni sozlash
         genai.configure(api_key=api_key_input)
         
-        # Eng yangi model nomi
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # Modelni tanlash (Barqaror versiya)
+        model = genai.GenerativeModel('gemini-pro')
 
         col1, col2 = st.columns([1, 1])
         
@@ -34,10 +34,9 @@ if api_key_input:
                 if not kod.strip():
                     st.warning("Iltimos, avval kod yozing!")
                 else:
-                    # Kodni bajarib ko'rish
+                    # Kodni tekshirib ko'rish
                     xato_matni = "Xato topilmadi (Muvaffaqiyatli)"
                     try:
-                        # Kodni xavfsiz muhitda tekshirish
                         exec(kod, {})
                     except Exception as e:
                         xato_matni = f"{type(e).__name__}: {str(e)}"
@@ -54,7 +53,6 @@ if api_key_input:
                                 st.success(response.text)
                         except Exception as ai_err:
                             st.error(f"AI bilan bog'lanishda xato: {ai_err}")
-                            st.info("Eslatma: API kalitingiz to'g'riligini va internetni tekshiring.")
                             
     except Exception as general_err:
         st.error(f"Tizimda kutilmagan xato: {general_err}")
