@@ -357,10 +357,20 @@ def get_ai_response(
     max_tokens: int,
     use_streaming: bool
 ):
-    """AI dan javob olish (streaming yoki normal)."""
+    """AI dan javob olish (streaming yoki normal).
+    
+    MUHIM: Groq API faqat 'role' va 'content' maydonlarini qabul qiladi.
+    'time', 'model' kabi qo'shimcha maydonlarni filterlash kerak.
+    """
+    # Faqat API uchun kerakli maydonlarni olish
+    clean_messages = [
+        {"role": msg["role"], "content": msg["content"]}
+        for msg in messages
+    ]
+    
     messages_for_api = [
         {"role": "system", "content": system_prompt}
-    ] + messages
+    ] + clean_messages
 
     completion = client.chat.completions.create(
         model=model,
