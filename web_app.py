@@ -4,38 +4,35 @@ from groq import Groq
 # 1. Sahifa sozlamalari
 st.set_page_config(page_title="AI Python Tutor", layout="wide", page_icon="🎓")
 
-# Sahifa sarlavhasi
+# Streamlit Secrets'dan kalitni tekshiramiz
+if "GROQ_API_KEY" in st.secrets:
+    api_key = st.secrets["GROQ_API_KEY"]
+else:
+    api_key = None
+
 st.title("🎓 Intellektual Python Repetitori")
 st.markdown("---")
 
-# 2. Yon panel (Sidebar) sozlamalari
+# 2. Yon panel
 with st.sidebar:
-    st.header("⚙️ Sozlamalar")
-    # API kalit kiritish joyi
-    api_key_input = st.text_input("Groq API Keyni kiriting:", type="password").strip()
-    
-    st.write("---")
-    st.info("""
-    **Qanday ishlatiladi?**
-    1. Groq API kalitingizni kiriting.
-    2. Python kodingizni yozing.
-    3. 'Tahlil qilish' tugmasini bosing.
-    """)
-    st.write("👨‍💻 Dasturchi: **Jaloliddin**")
+    st.header("⚙️ Ma'lumot")
+    st.write("Bu bot sizga Python dasturlash tilini o'rganishda yordam beradi.")
+    st.write("Dasturchi: **Mushtariy**")
+    st.markdown("---")
+    if api_key:
+        st.success("✅ Tizim tayyor (API ulandi)")
+    else:
+        st.error("❌ API kalit topilmadi! Streamlit Secrets'ni sozlang.")
 
 # 3. Asosiy mantiq
-if api_key_input:
+if api_key:
     try:
-        # Groq mijozini yaratish
-        client = Groq(api_key=api_key_input)
-
-        # Ekranni ikki ustunga bo'lamiz
+        client = Groq(api_key=api_key)
         col1, col2 = st.columns([1, 1])
 
         with col1:
             st.subheader("📝 Kod yozish maydoni")
             kod = st.text_area("Python kodingizni shu yerga yozing:", height=350, placeholder="Masalan: print('Salom')")
-            
             tugma = st.button("Tahlil qilish 🔍", use_container_width=True)
 
         if tugma:
@@ -43,31 +40,28 @@ if api_key_input:
                 st.warning("Iltimos, avval kod yozing!")
             else:
                 # Koddagi xatolikni tekshirish
-                xato_matni = "Kodda sintaktik xato yo'q."
+                xato_info = "Kodda sintaktik xato yo'q."
                 try:
-                    # Kodni vaqtincha tekshirib ko'ramiz
                     exec(kod, {})
                 except Exception as e:
-                    xato_matni = f"{type(e).__name__}: {str(e)}"
+                    xato_info = f"{type(e).__name__}: {str(e)}"
                 
-                # AI dan tahlil so'raymiz
                 with st.spinner("AI kodingizni o'rganmoqda..."):
                     try:
-                        # YANGI MODEL: llama-3.3-70b-versatile
+                        # Eng yangi model nomi
                         completion = client.chat.completions.create(
                             messages=[
                                 {
                                     "role": "system", 
-                                    "content": "Sen o'zbek tilida gapiradigan mohir Python o'qituvchisisan. Talabaga xatoni darrov aytma, Sokratik usulda savollar berib uni o'ylashga majbur qil va yordam ber."
+                                    "content": "Sen o'zbek tilida gapiradigan mohir Python o'qituvchisisan. Talabaga xatoni darrov aytma, savollar bilan yo'naltir."
                                 },
                                 {
                                     "role": "user", 
-                                    "content": f"Talaba kodi: {kod}\nXato haqida ma'lumot: {xato_matni}\nUnga o'zbek tilida yordam ber."
+                                    "content": f"Kod: {kod}\nXato: {xato_info}"
                                 }
                             ],
                             model="llama-3.3-70b-versatile",
                         )
-                        
                         with col2:
                             st.subheader("🤖 AI Repetitor maslahati:")
                             st.success(completion.choices[0].message.content)
@@ -76,10 +70,9 @@ if api_key_input:
                         st.error(f"AI bilan bog'lanishda xato: {ai_err}")
 
     except Exception as e:
-        st.error(f"Tizim xatosi yuz berdi: {e}")
+        st.error(f"Tizim xatosi: {e}")
 else:
-    st.warning("⚠️ Davom etish uchun yon panelda Groq API Keyni kiriting!")
+    st.info("Iltimos, avval Streamlit Cloud dashboard'da API kalitni sozlang.")
 
-# Pastki qism
 st.markdown("---")
-st.caption("© 2026 Python AI Tutor - Barcha huquqlar himoyalangan.")
+st.caption("© 2026 Python AI Tutor | Mushtariy")
