@@ -1,78 +1,92 @@
 import streamlit as st
 from groq import Groq
 
-# 1. Sahifa sozlamalari
-st.set_page_config(page_title="AI Python Tutor", layout="wide", page_icon="🎓")
+# 1. Sahifa sozlamalari va Dizayn
+st.set_page_config(page_title="AI Python Mentor", layout="wide", page_icon="🤖")
 
-# Streamlit Secrets'dan kalitni tekshiramiz
+# Maxfiy kalitni olish
 if "GROQ_API_KEY" in st.secrets:
     api_key = st.secrets["GROQ_API_KEY"]
 else:
     api_key = None
 
-st.title("🎓 Intellektual Python Repetitori")
-st.markdown("---")
+# CSS orqali chat ko'rinishini chiroyli qilamiz
+st.markdown("""
+    <style>
+    .stChatFloatingInputContainer {padding-bottom: 20px;}
+    .reportview-container { background: #f0f2f6; }
+    </style>
+    """, unsafe_allow_html=True)
 
-# 2. Yon panel
+st.title("🤖 Professional AI Python Mentor")
+st.caption("Magistratura darajasidagi intellektual yordamchi")
+
+# 2. Session State - Suhbat tarixini saqlash uchun
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+# 3. Sidebar - Funksiyalar
 with st.sidebar:
-    st.header("⚙️ Ma'lumot")
-    st.write("Bu bot sizga Python dasturlash tilini o'rganishda yordam beradi.")
-    st.write("Dasturchi: **Mushtariy**")
-    st.markdown("---")
-    if api_key:
-        st.success("✅ Tizim tayyor (API ulandi)")
-    else:
-        st.error("❌ API kalit topilmadi! Streamlit Secrets'ni sozlang.")
+    st.header("⚙️ Boshqaruv")
+    if st.button("Suhbatni tozalash 🗑️"):
+        st.session_state.messages = []
+        st.rerun()
+    
+    st.write("---")
+    st.info(f"Dasturchi: Jaloliddin\nStatus: Magistr/Researcher")
+    if not api_key:
+        st.error("API Key topilmadi!")
 
-# 3. Asosiy mantiq
+# 4. Asosiy Chat Interfeysi
 if api_key:
-    try:
-        client = Groq(api_key=api_key)
-        col1, col2 = st.columns([1, 1])
+    client = Groq(api_key=api_key)
 
-        with col1:
-            st.subheader("📝 Kod yozish maydoni")
-            kod = st.text_area("Python kodingizni shu yerga yozing:", height=350, placeholder="Masalan: print('Salom')")
-            tugma = st.button("Tahlil qilish 🔍", use_container_width=True)
+    # Avvalgi xabarlarni ekranga chiqarish
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
 
-        if tugma:
-            if not kod.strip():
-                st.warning("Iltimos, avval kod yozing!")
-            else:
-                # Koddagi xatolikni tekshirish
-                xato_info = "Kodda sintaktik xato yo'q."
-                try:
-                    exec(kod, {})
-                except Exception as e:
-                    xato_info = f"{type(e).__name__}: {str(e)}"
+    # Foydalanuvchi kiritishi
+    if prompt := st.chat_input("Python bo'yicha savol bering yoki kodingizni tashlang..."):
+        
+        # Foydalanuvchi xabarini saqlash
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        # AI javobini generatsiya qilish
+        with st.chat_message("assistant"):
+            message_placeholder = st.empty()
+            full_response = ""
+            
+            try:
+                # Tizimga "shaxsiyat" berish (System Prompt)
+                system_instruction = {
+                    "role": "system", 
+                    "content": """Sen magistr darajasidagi mohir Python dasturchisisan. 
+                    Sening vazifang foydalanuvchi bilan xuddi professional hamkasbdek gaplashish.
+                    Agar foydalanuvchi kod tashlasa, uni chuqur tahlil qil (Time/Space complexity, PEP8, xavfsizlik).
+                    Suhbat davomida avvalgi aytilgan gaplarni eslab qol va shunga qarab javob ber.
+                    Javoblaring aniq, lo'nda va o'zbek tilida bo'lsin."""
+                }
                 
-                with st.spinner("AI kodingizni o'rganmoqda..."):
-                    try:
-                        # Eng yangi model nomi
-                        completion = client.chat.completions.create(
-                            messages=[
-                                {
-                                    "role": "system", 
-                                    "content": "Sen o'zbek tilida gapiradigan mohir Python o'qituvchisisan. Talabaga xatoni darrov aytma, savollar bilan yo'naltir."
-                                },
-                                {
-                                    "role": "user", 
-                                    "content": f"Kod: {kod}\nXato: {xato_info}"
-                                }
-                            ],
-                            model="llama-3.3-70b-versatile",
-                        )
-                        with col2:
-                            st.subheader("🤖 AI Repetitor maslahati:")
-                            st.success(completion.choices[0].message.content)
-                            
-                    except Exception as ai_err:
-                        st.error(f"AI bilan bog'lanishda xato: {ai_err}")
+                # Chat tarixini AI ga yuborish
+                messages_for_api = [system_instruction] + st.session_state.messages
+                
+                completion = client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=messages_for_api,
+                    stream=False # Magistrlik ishi uchun barqarorlik muhim
+                )
+                
+                full_response = completion.choices[0].message.content
+                message_placeholder.markdown(full_response)
+                
+                # AI javobini tarixga saqlash
+                st.session_state.messages.append({"role": "assistant", "content": full_response})
+                
+            except Exception as e:
+                st.error(f"Xatolik yuz berdi: {e}")
 
-    except Exception as e:
-        st.error(f"Tizim xatosi: {e}")
 else:
-    st.info("Iltimos, avval Streamlit Cloud dashboard'da API kalitni sozlang.")
-
-st.markdown("---")
-st.caption("© 2026 Python AI Tutor | Mushtariy")
+    st.warning("Iltimos, Secrets bo'limiga GROQ_API_KEY ni qo'shing.")
