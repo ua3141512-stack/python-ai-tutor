@@ -53,13 +53,11 @@ if api_key_input:
                 # AI dan tahlil so'raymiz
                 with st.spinner("AI kodingizni o'rganmoqda..."):
                     try:
-                        # Model nomini yangilangan: llama3-8b-8192
+                        # Modelga so'rov yuborish
                         completion = client.chat.completions.create(
                             messages=[
                                 {
                                     "role": "system", 
-                                    "content": "Sen o'zbek tilida gapiradigan mohir Python o'qituvchisisan. Talabaga xatoni darrov aytma, Sokratik usulda savollar berib uni o'ylashga majbur qil va yordam ber."
-                                },
                                     "content": "Sen o'zbek tilida gapiradigan mohir Python o'qituvchisisan. Talabaga xatoni darrov aytma, Sokratik usulda savollar berib uni o'ylashga majbur qil va yordam ber."
                                 },
                                 {
