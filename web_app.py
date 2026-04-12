@@ -1,83 +1,98 @@
 import streamlit as st
-from groq import Groq
-import time, json, re, logging
+import re, logging
 from datetime import datetime
 from pathlib import Path
 
-# 1. LOGGING & CONFIG
-LOG_DIR = Path("logs")
-LOG_DIR.mkdir(exist_ok=True)
-logging.basicConfig(filename=LOG_DIR/"app.log", level=logging.ERROR)
-
+# 1. INITIAL SETUP (Eng tepada bo'lishi shart)
 st.set_page_config(page_title="AI Python Mentor PRO", layout="wide")
 
-# 2. SESSION STATE (Xatolikni oldini olish uchun barcha o'zgaruvchilarni init qilamiz)
-if "request_history" not in st.session_state:
-    st.session_state.request_history = []
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "username" not in st.session_state:
-    st.session_state.username = None
+# 2. XAVFSIZ SESSION STATE (Barcha tablar uchun o'zgaruvchilar)
+state_keys = {
+    "username": None,
+    "messages": [],
+    "request_history": [],
+    "quiz_score": 0,
+    "current_tab": "Chat"
+}
 
-# 3. RATE LIMITER (Xatosiz versiya)
+for key, value in state_keys.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
+
+# 3. RATE LIMITER FUNKSIYASI
 def check_rate_limit():
     now = datetime.now()
-    # Faqat oxirgi 60 soniyadagi so'rovlarni saqlaymiz
-    st.session_state.request_history = [t for t in st.session_state.request_history 
-                                        if (now - t).total_seconds() < 60]
-    if len(st.session_state.request_history) >= 10:
+    # Request history mavjudligini qayta tekshirish
+    history = st.session_state.get("request_history", [])
+    # Oxirgi 60 soniyadagi so'rovlarni filtrlash
+    valid_history = [t for t in history if (now - t).total_seconds() < 60]
+    st.session_state.request_history = valid_history
+    
+    if len(valid_history) >= 10:
         return False
+    
     st.session_state.request_history.append(now)
     return True
 
-# 4. KOD MURAKKABLIGI
-def get_complexity(code):
-    points = len(re.findall(r'\b(if|for|while|elif|def|class|with)\b', code))
-    if points <= 2: return "🟢 Sodda", "#3fb950"
-    if points <= 6: return "🟡 O'rta", "#f0883e"
-    return "🔴 Murakkab", "#f85149"
-
-# --- UI QISMI ---
-if not st.session_state.username:
-    st.title("🐍 AI Python Mentor")
-    user_input = st.text_input("Ismingiz:")
-    if st.button("Kirish") and user_input:
-        st.session_state.username = user_input
-        st.rerun()
+# --- LOGIN QISMI ---
+if st.session_state.username is None:
+    st.title("🐍 AI Python Mentor PRO")
+    user_input = st.text_input("Ismingizni kiriting:")
+    if st.button("Kirish"):
+        if user_input:
+            st.session_state.username = user_input
+            st.rerun()
     st.stop()
 
-# TABS
-tabs = st.tabs(["💬 Chat", "🖥️ Runner", "📊 Dashboard"])
+# --- ASOSIY INTERFEYS ---
+st.title(f"Xush kelibsiz, {st.session_state.username}! 🚀")
 
-# TAB 1: CHAT
+# 12 ta tabni yaratish
+tabs = st.tabs([
+    "💬 Chat", "🤖 Copilot", "🖥️ Runner", "🏆 Quiz", 
+    "🌐 Tarjima", "✂️ Snippets", "📈 Progress", "⚖️ Multi-Model", 
+    "🔗 Share", "🐙 GitHub", "🗓️ Challenge", "📊 Dashboard"
+])
+
+# 1. CHAT TAB
 with tabs[0]:
-    for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]): st.markdown(msg["content"])
+    st.caption("Maslahat: Ctrl + Enter orqali yuboring.")
+    # Xabarlarni xavfsiz chiqarish
+    msgs = st.session_state.get("messages", [])
+    for m in msgs:
+        with st.chat_message(m["role"]):
+            st.markdown(m["content"])
 
     if prompt := st.chat_input("Savol bering..."):
         if not check_rate_limit():
-            st.error("🛑 Sekinroq! Minutiga 10 ta so'rov limiti bor.")
+            st.error("🛑 Sekinroq! Limit: 1 minutda 10 ta so'rov.")
         else:
             st.session_state.messages.append({"role": "user", "content": prompt})
-            with st.chat_message("user"): st.markdown(prompt)
-            # Bu yerda Groq API chaqiruvi bo'ladi...
-            st.success("Xabar yuborildi!")
+            with st.chat_message("user"):
+                st.markdown(prompt)
+            # Bu yerda API chaqiruvi bo'ladi
+            st.info("AI javob bermoqda...")
 
-# TAB 2: RUNNER
-with tabs[1]:
-    code_input = st.text_area("Python kodi:", height=150)
-    if code_input:
-        lbl, clr = get_complexity(code_input)
-        st.markdown(f"Murakkablik: <b style='color:{clr}'>{lbl}</b>", unsafe_allow_html=True)
-
-# TAB 3: DASHBOARD (Rasmda xato bergan joy shu yer)
+# 3. RUNNER TAB (Complexity bilan)
 with tabs[2]:
-    st.subheader("📊 Tizim statistikasi")
-    col_a, col_b = st.columns(2)
+    code = st.text_area("Python kodi:", height=150, key="runner_area")
+    if code:
+        points = len(re.findall(r'\b(if|for|while|def|class)\b', code))
+        status = "🟢 Sodda" if points < 3 else "🟡 O'rta" if points < 7 else "🔴 Murakkab"
+        st.write(f"Kod murakkabligi: {status}")
+
+# 12. DASHBOARD TAB (Xatolik bergan joyni himoyaladik)
+with tabs[11]:
+    st.subheader("📊 Tizim holati")
+    c1, c2 = st.columns(2)
     
-    # .get() ishlatish xavfsizroq yoki default qiymat berish kerak
-    history = st.session_state.get("request_history", [])
-    msgs = st.session_state.get("messages", [])
+    # Xavfsiz o'qish: .get() va len()
+    req_count = len(st.session_state.get("request_history", []))
+    msg_count = len(st.session_state.get("messages", []))
     
-    col_a.metric("So'rovlar (so'nggi 1 min)", len(history))
-    col_b.metric("Suhbatlar soni", len(msgs))
+    c1.metric("So'rovlar (1 min)", req_count)
+    c2.metric("Jami xabarlar", msg_count)
+    
+    if st.button("Tarixni tozalash"):
+        st.session_state.messages = []
+        st.rerun()
