@@ -1,4 +1,4 @@
-bu"""
+
 AI Python Mentor LMS v6.0 (PRO)
 Muallif: Jaloliddin | LMS Integrated Version
 """
