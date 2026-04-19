@@ -1,6 +1,6 @@
 """
 AI Python Mentor PRO v5.0
-Muallif: gulnoza | Magistr/Researcher
+Muallif: Jaloliddin | Magistr/Researcher
 Barcha funksiyalar:
   👤 Foydalanuvchi tizimi (nom + shelve DB)
   💬 Chat Mentor (4 rejim, streaming)
@@ -560,45 +560,375 @@ DAILY_CHALLENGES = [
 ]
 
 # ─────────────────────────────────────
-# LOGIN EKRANI
+
+# ─────────────────────────────────────
+# ROL TIZIMI — Foydalanuvchilar bazasi
+# ─────────────────────────────────────
+# secrets.toml da shunday yozing:
+# [users.admin]
+# password = "admin123"
+# role = "admin"
+#
+# [users.teacher1]
+# password = "teacher123"
+# role = "teacher"
+#
+# [users.student1]
+# password = "student123"
+# role = "student"
+
+ROLE_ICONS = {
+    "admin":   "👑",
+    "teacher": "👨‍🏫",
+    "student": "👨‍🎓",
+}
+
+ROLE_COLORS = {
+    "admin":   "#f0883e",
+    "teacher": "#4f9cf9",
+    "student": "#00d4aa",
+}
+
+def get_users_from_secrets() -> dict:
+    """secrets.toml dan foydalanuvchilarni olish."""
+    try:
+        users = st.secrets.get("users", {})
+        return dict(users)
+    except:
+        # Default foydalanuvchilar (secrets.toml yo'q bo'lsa)
+        return {
+            "admin":    {"password": "admin123",   "role": "admin"},
+            "teacher":  {"password": "teacher123", "role": "teacher"},
+            "student":  {"password": "student123", "role": "student"},
+        }
+
+def check_login(username: str, password: str) -> str | None:
+    """Login tekshirish. Rol qaytaradi yoki None."""
+    users = get_users_from_secrets()
+    user = users.get(username.lower())
+    if user and user.get("password") == password:
+        return user.get("role", "student")
+    return None
+
+def db_get_all_students() -> list:
+    """Barcha studentlar ro'yxati (shelve dan)."""
+    try:
+        with shelve.open(DB_PATH) as db:
+            result = []
+            for k in db.keys():
+                data = db[k]
+                if data.get("role") == "student":
+                    result.append({"username": k, **data})
+            return result
+    except:
+        return []
+
+def db_get_all_users() -> list:
+    """Barcha foydalanuvchilar."""
+    try:
+        with shelve.open(DB_PATH) as db:
+            return [{"username": k, **db[k]} for k in db.keys()]
+    except:
+        return []
+
+# DEFAULTS ga rol qo'shamiz
+if "role" not in st.session_state:
+    st.session_state.role = None
+if "username" not in st.session_state:
+    st.session_state.username = None
+
+# ─────────────────────────────────────
+# LOGIN EKRANI — Rol tizimi bilan
 # ─────────────────────────────────────
 if not st.session_state.username:
     st.markdown(f"""
     <div class="login-card">
       <div style="font-size:56px;margin-bottom:8px">🐍</div>
       <h2 style="color:{T['txt_p']};margin-bottom:4px">AI Python Mentor PRO</h2>
-      <p style="color:{T['txt_s']};font-size:14px;margin-bottom:28px">v5.0 — Magistratura darajasidagi yordamchi</p>
+      <p style="color:{T['txt_s']};font-size:14px;margin-bottom:6px">v6.0 — Rol tizimi bilan</p>
+      <div style="display:flex;gap:8px;justify-content:center;margin-bottom:20px">
+        <span class="badge b-orange">👑 Admin</span>
+        <span class="badge b-blue">👨‍🏫 Teacher</span>
+        <span class="badge b-green">👨‍🎓 Student</span>
+      </div>
     </div>
     """, unsafe_allow_html=True)
 
     col_c = st.columns([1, 2, 1])[1]
     with col_c:
-        uname = st.text_input("👤 Ismingizni kiriting:", placeholder="Masalan: Jaloliddin",
-                               max_chars=30)
+        login_user = st.text_input("👤 Username:", placeholder="admin / teacher / student",
+                                    max_chars=30)
+        login_pass = st.text_input("🔑 Parol:", type="password", placeholder="••••••••")
+
         if st.button("🚀 Kirish", use_container_width=True):
-            if uname.strip():
-                uname = uname.strip()
-                st.session_state.username = uname
-                # DB dan oldingi ma'lumotlarni yuklash
-                st.session_state.snippets       = db_load_snippets(uname) or BUILTIN_SNIPPETS.copy()
-                st.session_state.saved_sessions = db_load_sessions(uname)
-                st.session_state.progress_topics= db_load_progress(uname)
-                st.success(f"✅ Xush kelibsiz, {uname}!")
-                time.sleep(0.5)
-                st.rerun()
+            if login_user.strip() and login_pass.strip():
+                role = check_login(login_user.strip(), login_pass.strip())
+                if role:
+                    uname = login_user.strip().lower()
+                    st.session_state.username = uname
+                    st.session_state.role     = role
+                    # DB ga rol saqlash
+                    data = db_get(uname)
+                    data["role"] = role
+                    db_set(uname, data)
+                    # Ma'lumotlarni yuklash
+                    st.session_state.snippets        = db_load_snippets(uname) or BUILTIN_SNIPPETS.copy()
+                    st.session_state.saved_sessions  = db_load_sessions(uname)
+                    st.session_state.progress_topics = db_load_progress(uname)
+                    icon = ROLE_ICONS.get(role, "👤")
+                    st.success(f"✅ {icon} Xush kelibsiz, {uname}! ({role})")
+                    time.sleep(0.5)
+                    st.rerun()
+                else:
+                    st.error("❌ Username yoki parol noto'g'ri!")
             else:
-                st.warning("⚠️ Ism kiriting!")
+                st.warning("⚠️ Username va parolni kiriting!")
+
+        st.divider()
+        st.markdown(f"""
+        <div style="color:{T['txt_s']};font-size:12px;text-align:center">
+        <strong>Demo kirish:</strong><br>
+        👑 admin / admin123 &nbsp;|&nbsp;
+        👨‍🏫 teacher / teacher123 &nbsp;|&nbsp;
+        👨‍🎓 student / student123
+        </div>
+        """, unsafe_allow_html=True)
     st.stop()
 
 # ─────────────────────────────────────
-# HEADER
+# ROL TEKSHIRUVI
 # ─────────────────────────────────────
-h1, h2, h3, h4 = st.columns([3, 1, 0.8, 0.8])
+CURRENT_ROLE = st.session_state.get("role", "student")
+IS_ADMIN     = CURRENT_ROLE == "admin"
+IS_TEACHER   = CURRENT_ROLE in ("admin", "teacher")
+IS_STUDENT   = CURRENT_ROLE == "student"
+ROLE_ICON    = ROLE_ICONS.get(CURRENT_ROLE, "👤")
+ROLE_COLOR   = ROLE_COLORS.get(CURRENT_ROLE, "#00d4aa")
+
+# ─────────────────────────────────────
+# ADMIN PANEL
+# ─────────────────────────────────────
+def show_admin_panel():
+    st.markdown(f"""
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+        <span style="font-size:28px">👑</span>
+        <span style="color:{T['txt_p']};font-size:20px;font-weight:700">Admin Panel</span>
+        <span class="badge b-orange">ADMIN</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    adm1, adm2, adm3 = st.tabs(["👥 Foydalanuvchilar", "📊 Statistika", "⚙️ Sozlamalar"])
+
+    with adm1:
+        st.markdown("#### 👥 Barcha foydalanuvchilar")
+        users = get_users_from_secrets()
+
+        # Jadval
+        cols = st.columns([2, 2, 1, 1])
+        cols[0].markdown("**Username**")
+        cols[1].markdown("**Rol**")
+        cols[2].markdown("**DB**")
+        cols[3].markdown("**Amal**")
+        st.divider()
+
+        for uname, udata in users.items():
+            role  = udata.get("role", "student")
+            icon  = ROLE_ICONS.get(role, "👤")
+            color = ROLE_COLORS.get(role, "#00d4aa")
+            db_data = db_get(uname)
+            has_db  = "✅" if db_data else "—"
+
+            c1,c2,c3,c4 = st.columns([2,2,1,1])
+            c1.markdown(f"**{uname}**")
+            c2.markdown(f'<span style="color:{color}">{icon} {role}</span>', unsafe_allow_html=True)
+            c3.markdown(has_db)
+            with c4:
+                if uname != st.session_state.username:
+                    if st.button("🗑️", key=f"del_user_{uname}"):
+                        try:
+                            with shelve.open(DB_PATH) as db:
+                                if uname in db:
+                                    del db[uname]
+                            st.success(f"✅ {uname} DB dan o'chirildi")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(str(e))
+
+        st.divider()
+        st.markdown("#### ➕ Yangi foydalanuvchi qo'shish")
+        st.info("💡 Yangi foydalanuvchi qo'shish uchun `.streamlit/secrets.toml` faylini tahrirlang:")
+        st.code("""
+[users.yangi_ism]
+password = "parol123"
+role = "student"   # admin / teacher / student
+        """, language="toml")
+
+    with adm2:
+        st.markdown("#### 📊 Tizim statistikasi")
+        users = get_users_from_secrets()
+        roles_count = {"admin":0, "teacher":0, "student":0}
+        for u in users.values():
+            r = u.get("role","student")
+            if r in roles_count:
+                roles_count[r] += 1
+
+        m1,m2,m3 = st.columns(3)
+        m1.metric("👑 Adminlar",   roles_count["admin"])
+        m2.metric("👨‍🏫 O'qituvchilar", roles_count["teacher"])
+        m3.metric("👨‍🎓 Studentlar",  roles_count["student"])
+
+        # DB statistika
+        st.divider()
+        st.markdown("#### 💾 Database statistika")
+        all_users_db = db_get_all_users()
+        st.metric("📦 DB da saqlangan foydalanuvchilar", len(all_users_db))
+
+        if all_users_db:
+            for u in all_users_db[:10]:
+                uname = u.get("username","?")
+                sessions = len(u.get("sessions",[]))
+                progress = sum(u.get("progress",{}).values())
+                st.markdown(f"• **{uname}** — {sessions} sessiya, {progress} ball")
+
+    with adm3:
+        st.markdown("#### ⚙️ Tizim sozlamalari")
+        st.markdown(f"""
+        <div class="card-blue">
+        <strong>secrets.toml joyi:</strong><br>
+        <code>.streamlit/secrets.toml</code><br><br>
+        <strong>Database joyi:</strong><br>
+        <code>data/users.db</code><br><br>
+        <strong>Versiya:</strong> v6.0 PRO
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.divider()
+        if st.button("🗑️ Barcha DB ni tozalash", type="primary"):
+            if st.session_state.get("confirm_clear"):
+                try:
+                    import glob
+                    for f in glob.glob(str(DATA_DIR / "users*")):
+                        os.remove(f)
+                    st.success("✅ DB tozalandi!")
+                    st.session_state.confirm_clear = False
+                except Exception as e:
+                    st.error(str(e))
+            else:
+                st.session_state.confirm_clear = True
+                st.warning("⚠️ Yana bir marta bosing — bu amalni qaytarib bo'lmaydi!")
+
+# ─────────────────────────────────────
+# TEACHER PANEL
+# ─────────────────────────────────────
+def show_teacher_panel():
+    st.markdown(f"""
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+        <span style="font-size:28px">👨‍🏫</span>
+        <span style="color:{T['txt_p']};font-size:20px;font-weight:700">O'qituvchi Panel</span>
+        <span class="badge b-blue">TEACHER</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    t1, t2, t3 = st.tabs(["👨‍🎓 Studentlar", "📊 Progress", "📢 E'lon"])
+
+    with t1:
+        st.markdown("#### 👨‍🎓 Studentlar ro'yxati")
+        users = get_users_from_secrets()
+        students = {k:v for k,v in users.items() if v.get("role")=="student"}
+
+        if not students:
+            st.info("Hali studentlar yo'q.")
+        else:
+            for uname in students:
+                db_data   = db_get(uname)
+                progress  = db_data.get("progress", {})
+                sessions  = db_data.get("sessions", [])
+                total_ball= sum(progress.values())
+
+                with st.expander(f"👨‍🎓 {uname} — {total_ball} ball | {len(sessions)} sessiya"):
+                    sc1, sc2 = st.columns(2)
+                    with sc1:
+                        st.markdown("**📈 Mavzu ballari:**")
+                        if progress:
+                            for topic, ball in progress.items():
+                                st.markdown(f"• {topic}: **{ball}** ball")
+                        else:
+                            st.markdown("Hali mavzu ballari yo'q")
+                    with sc2:
+                        st.markdown("**💾 Sessiyalar:**")
+                        if sessions:
+                            for sess in sessions[-3:]:
+                                st.markdown(f"• {sess['name']} ({sess['count']} xabar)")
+                        else:
+                            st.markdown("Hali sessiyalar yo'q")
+
+    with t2:
+        st.markdown("#### 📊 Sinf progressi")
+        users    = get_users_from_secrets()
+        students = {k:v for k,v in users.items() if v.get("role")=="student"}
+
+        if students:
+            import pandas as pd
+            data = []
+            for uname in students:
+                db_data  = db_get(uname)
+                progress = db_data.get("progress", {})
+                total    = sum(progress.values())
+                data.append({"Student": uname, "Ball": total})
+
+            df = pd.DataFrame(data).sort_values("Ball", ascending=False)
+            if not df.empty:
+                st.bar_chart(df.set_index("Student"), height=250)
+
+            # Top 3
+            st.markdown("**🏆 Top 3 student:**")
+            for i, row in df.head(3).iterrows():
+                medal = ["🥇","🥈","🥉"][list(df.index).index(i)]
+                st.markdown(f"{medal} **{row['Student']}** — {row['Ball']} ball")
+        else:
+            st.info("Hali studentlar yo'q.")
+
+    with t3:
+        st.markdown("#### 📢 E'lon yuborish")
+        st.info("💡 E'lon DB ga saqlanadi, studentlar login qilganda ko'radi.")
+
+        ann_title = st.text_input("Sarlavha:", placeholder="Bugungi dars haqida...")
+        ann_body  = st.text_area("Matn:", height=100, placeholder="Studentlarga xabar...")
+
+        if st.button("📢 Yuborish", use_container_width=False):
+            if ann_title and ann_body:
+                # Barcha studentlarga e'lon saqlash
+                users    = get_users_from_secrets()
+                students = {k:v for k,v in users.items() if v.get("role")=="student"}
+                for uname in students:
+                    data = db_get(uname)
+                    anns = data.get("announcements", [])
+                    anns.append({
+                        "title": ann_title,
+                        "body":  ann_body,
+                        "from":  st.session_state.username,
+                        "time":  fmt_time(),
+                        "date":  date.today().isoformat()
+                    })
+                    data["announcements"] = anns[-10:]  # max 10
+                    db_set(uname, data)
+                st.success(f"✅ E'lon {len(students)} ta studentga yuborildi!")
+            else:
+                st.warning("⚠️ Sarlavha va matn kiriting!")
+
+
+# ─────────────────────────────────────
+# HEADER — Rol bilan
+# ─────────────────────────────────────
+h1, h2, h3, h4, h5 = st.columns([3, 0.8, 0.8, 0.8, 0.7])
 with h1:
     st.title("🐍 AI Python Mentor PRO")
-    st.caption(f"v5.0 | 👤 {st.session_state.username} | {st.session_state.session_start} da boshlangan")
+    role_color = ROLE_COLORS.get(CURRENT_ROLE, "#00d4aa")
+    st.caption(f"v6.0 | {ROLE_ICON} **{st.session_state.username}** | "
+               f'<span style="color:{role_color}">{CURRENT_ROLE.upper()}</span> | '
+               f"{st.session_state.session_start}", unsafe_allow_html=True)
 with h2:
-    if st.button("🌙 Dark" if not IS_DARK else "☀️ Light", use_container_width=True):
+    if st.button("🌙" if not IS_DARK else "☀️", use_container_width=True):
         st.session_state.theme = "light" if IS_DARK else "dark"
         st.rerun()
 with h3:
@@ -608,8 +938,41 @@ with h3:
     else:
         st.error("Offline")
 with h4:
+    # Rol badge
+    role_badges = {"admin":"b-orange","teacher":"b-blue","student":"b-green"}
+    cls = role_badges.get(CURRENT_ROLE,"b-green")
+    st.markdown(f'<div class="badge {cls}" style="margin-top:8px">{ROLE_ICON} {CURRENT_ROLE}</div>',
+                unsafe_allow_html=True)
+with h5:
     if st.button("🚪 Chiqish", use_container_width=True):
-        st.session_state.username = None
+        for k in list(st.session_state.keys()):
+            del st.session_state[k]
+        st.rerun()
+st.divider()
+
+# Admin va Teacher uchun maxsus panel
+if IS_ADMIN:
+    show_admin_panel()
+    st.divider()
+elif IS_TEACHER:
+    show_teacher_panel()
+    st.divider()
+
+# Student uchun e'lonlar
+if IS_STUDENT:
+    anns = db_get(st.session_state.username).get("announcements", [])
+    if anns:
+        with st.expander(f"📢 Yangi e'lonlar ({len(anns)} ta)", expanded=True):
+            for ann in reversed(anns[-3:]):
+                st.markdown(f"**📢 {ann['title']}** — *{ann.get('from','O\'qituvchi')}* | {ann.get('time','')}")
+                st.markdown(f"<small style='color:#8b949e'>{ann['body']}</small>", unsafe_allow_html=True)
+                st.divider()
+        if st.button("✅ E'lonlarni o'qildi deb belgilash"):
+            data = db_get(st.session_state.username)
+            data["announcements"] = []
+            db_set(st.session_state.username, data)
+            st.rerun()
+
         st.rerun()
 st.divider()
 
@@ -617,7 +980,7 @@ st.divider()
 # SIDEBAR
 # ─────────────────────────────────────
 with st.sidebar:
-    st.markdown(f"### 👤 {st.session_state.username}")
+    st.markdown(f"### {ROLE_ICON} {st.session_state.username}  ({CURRENT_ROLE})")
     mentor_mode   = st.selectbox("🎯 Mentor rejimi", list(MENTOR_PROMPTS.keys()))
     model_choice  = st.selectbox("🤖 Model", MODELS)
     temperature   = st.slider("🌡️ Ijodkorlik", 0.0, 1.0, 0.7, 0.1)
@@ -633,7 +996,7 @@ with st.sidebar:
     c2.metric("🔄", st.session_state.conversation_count)
     st.metric("🪙 Token", f"~{st.session_state.total_tokens:,}")
     quiz_pct = int(st.session_state.quiz_score/st.session_state.quiz_total*100) if st.session_state.quiz_total else 0
-    st.metric("🏆 gulnoza", f"{st.session_state.quiz_score}/{st.session_state.quiz_total} ({quiz_pct}%)")
+    st.metric("🏆 Quiz", f"{st.session_state.quiz_score}/{st.session_state.quiz_total} ({quiz_pct}%)")
     st.divider()
 
     st.markdown("### 💾 Sessiya")
@@ -679,7 +1042,7 @@ with st.sidebar:
 
     st.divider()
     st.markdown(f'<p style="color:{T["txt_s"]};font-size:11px;text-align:center">'
-                '🐍 v5.0 PRO | Jaloliddin<br>Magistr/Researcher<br>'
+                '🐍 v6.0 PRO | Jaloliddin<br>Magistr/Researcher<br>'
                 'Groq + Piston API</p>', unsafe_allow_html=True)
 
 # ─────────────────────────────────────
