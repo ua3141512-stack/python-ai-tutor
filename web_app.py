@@ -1,4 +1,4 @@
-"""
+bu"""
 AI Python Mentor LMS v6.0 (PRO)
 Muallif: Jaloliddin | LMS Integrated Version
 """
@@ -59,7 +59,7 @@ if not st.session_state.username:
         with st.form("login_form"):
             uname = st.text_input("👤 Ismingiz:")
             urole = st.selectbox("Siz kimsiz?", ["Student", "Teacher"])
-            submit = st.form_submit_button("🚀 Kirish")
+            submit = st.form_submit_button("🚀 gulnoza")
             if submit and uname:
                 st.session_state.username = uname.strip()
                 st.session_state.role = urole
