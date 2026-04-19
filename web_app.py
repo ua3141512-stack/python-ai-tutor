@@ -591,23 +591,47 @@ ROLE_COLORS = {
 
 def get_users_from_secrets() -> dict:
     """secrets.toml dan foydalanuvchilarni olish."""
+    # Har doim ishlashi uchun default foydalanuvchilar
+    defaults = {
+        "admin":   {"password": "admin123",   "role": "admin"},
+        "teacher": {"password": "teacher123", "role": "teacher"},
+        "student": {"password": "student123", "role": "student"},
+    }
     try:
-        users = st.secrets.get("users", {})
-        return dict(users)
+        secrets_users = st.secrets.get("users", {})
+        if secrets_users:
+            # secrets.toml dagi va default larni birlashtirish
+            merged = {**defaults, **dict(secrets_users)}
+            return merged
     except:
-        # Default foydalanuvchilar (secrets.toml yo'q bo'lsa)
-        return {
-            "admin":    {"password": "admin123",   "role": "admin"},
-            "teacher":  {"password": "teacher123", "role": "teacher"},
-            "student":  {"password": "student123", "role": "student"},
-        }
+        pass
+    return defaults
 
 def check_login(username: str, password: str) -> str | None:
-    """Login tekshirish. Rol qaytaradi yoki None."""
+    """Login tekshirish.
+    
+    3 xil holat:
+    1. secrets.toml da bor → parolni tekshir
+    2. Default (admin/teacher/student) → parolni tekshir  
+    3. Boshqa istalgan ism → parol kamida 3 belgi bo'lsa student sifatida kiradi
+    """
+    uname = username.strip().lower()
+    if not uname or not password:
+        return None
+
     users = get_users_from_secrets()
-    user = users.get(username.lower())
-    if user and user.get("password") == password:
-        return user.get("role", "student")
+
+    # secrets.toml yoki default da bor bo'lsa
+    if uname in users:
+        user = users[uname]
+        if user.get("password") == password:
+            return user.get("role", "student")
+        return None  # parol noto'g'ri
+
+    # Yangi foydalanuvchi — kamida 3 belgili parol bo'lsa student sifatida kiradi
+    if len(password) >= 3:
+        return "student"
+
     return None
 
 def db_get_all_students() -> list:
