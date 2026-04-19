@@ -633,7 +633,7 @@ with st.sidebar:
     c2.metric("🔄", st.session_state.conversation_count)
     st.metric("🪙 Token", f"~{st.session_state.total_tokens:,}")
     quiz_pct = int(st.session_state.quiz_score/st.session_state.quiz_total*100) if st.session_state.quiz_total else 0
-    st.metric("🏆 Quiz", f"{st.session_state.quiz_score}/{st.session_state.quiz_total} ({quiz_pct}%)")
+    st.metric("🏆 gulnoza", f"{st.session_state.quiz_score}/{st.session_state.quiz_total} ({quiz_pct}%)")
     st.divider()
 
     st.markdown("### 💾 Sessiya")
