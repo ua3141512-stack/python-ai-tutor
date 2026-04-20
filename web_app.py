@@ -1082,11 +1082,13 @@ if not api_key:
 # ═══════════════════════════════════════════════════════════════
 TABS = ["💬 Chat","🤖 Copilot","🖥️ Runner","🏆 Quiz",
         "🌐 Tarjima","✂️ Snippets","📈 Progress",
-        "⚖️ Multi-Model","🔗 Share","🐙 GitHub","🗓️ Challenge","📊 Dashboard"]
+        "⚖️ Multi-Model","🔗 Share","🐙 GitHub","🗓️ Challenge","📊 Dashboard",
+        "📋 Vazifalar","🏫 Sinf"]
 
 (tab_chat, tab_copilot, tab_runner, tab_quiz, tab_trans,
  tab_snip, tab_prog, tab_multi, tab_share,
- tab_github, tab_challenge, tab_dash) = st.tabs(TABS)
+ tab_github, tab_challenge, tab_dash,
+ tab_assignments, tab_classroom) = st.tabs(TABS)
 
 # ══════════════════════════════════════════════
 # TAB 1 — CHAT
@@ -1978,3 +1980,469 @@ with tab_dash:
                 f'🐍 AI Python Mentor PRO v5.0 | Muallif: {st.session_state.username}<br>'
                 f'Powered by Groq API + Piston API | Magistr/Researcher</p>',
                 unsafe_allow_html=True)
+# ══════════════════════════════════════════════════════════════
+# LMS — YORDAMCHI FUNKSIYALAR
+# ══════════════════════════════════════════════════════════════
+
+def lms_save_assignment(teacher: str, title: str, desc: str,
+                        difficulty: str, topic: str, hint: str,
+                        max_score: int, deadline: str) -> int:
+    data = db_get("__assignments__")
+    items = data.get("list", [])
+    new_id = len(items) + 1
+    items.append({
+        "id": new_id, "title": title, "desc": desc,
+        "difficulty": difficulty, "topic": topic,
+        "hint": hint, "max_score": max_score,
+        "deadline": deadline, "teacher": teacher,
+        "created": fmt_time(), "date": date.today().isoformat(),
+        "active": True,
+    })
+    data["list"] = items
+    db_set("__assignments__", data)
+    return new_id
+
+def lms_get_assignments() -> list:
+    return [a for a in db_get("__assignments__").get("list", []) if a.get("active", True)]
+
+def lms_delete_assignment(aid: int):
+    data = db_get("__assignments__")
+    for a in data.get("list", []):
+        if a["id"] == aid:
+            a["active"] = False
+    db_set("__assignments__", data)
+
+def lms_submit(student: str, aid: int, code: str) -> dict:
+    assignments = lms_get_assignments()
+    assignment  = next((a for a in assignments if a["id"] == aid), None)
+    if not assignment:
+        return {"error": "Vazifa topilmadi"}
+
+    stdout, stderr = run_piston(code)
+
+    # AI baholash
+    grade_prompt = f"""Vazifa: {assignment['desc']}
+Student kodi:
+```python
+{code[:2000]}
+```
+Natija: {stdout[:300] or 'Yo\'q'}
+Xato: {stderr[:200] or 'Yo\'q'}
+
+Faqat JSON: {{"score": 85, "feedback": "O\'zbek tilida izoh...", "passed": true}}"""
+
+    score, feedback, passed = 50, "AI baholash ishlamadi.", False
+    try:
+        resp = simple_ai(grade_prompt,
+                         "Sen Python kod baholovchisisan. FAQAT JSON qaytargin.",
+                         model_choice, 0.1)
+        import re as _re
+        m = _re.search(r'\{.*?\}', resp, _re.DOTALL)
+        if m:
+            d = json.loads(m.group())
+            score    = min(100, max(0, int(d.get("score", 50))))
+            feedback = d.get("feedback", "")
+            passed   = bool(d.get("passed", score >= 60))
+    except:
+        pass
+
+    sub = {
+        "assignment_id": aid,
+        "assignment_title": assignment["title"],
+        "code": code, "stdout": stdout, "stderr": stderr,
+        "score": score, "feedback": feedback, "passed": passed,
+        "time": fmt_time(), "date": date.today().isoformat(),
+    }
+    data = db_get(student)
+    subs = data.get("submissions", [])
+    subs.append(sub)
+    data["submissions"] = subs
+    db_set(student, data)
+    return sub
+
+def lms_my_submissions(student: str) -> list:
+    return db_get(student).get("submissions", [])
+
+def lms_all_submissions() -> list:
+    result = []
+    try:
+        with shelve.open(DB_PATH) as db:
+            for k in db.keys():
+                if k.startswith("__"): continue
+                d = db[k]
+                if d.get("role") == "student" or d.get("submissions"):
+                    for s in d.get("submissions", []):
+                        result.append({"student": k, **s})
+    except:
+        pass
+    return result
+
+def lms_leaderboard() -> list:
+    result = []
+    try:
+        with shelve.open(DB_PATH) as db:
+            for k in db.keys():
+                if k.startswith("__"): continue
+                d = db[k]
+                subs     = d.get("submissions", [])
+                progress = sum(d.get("progress", {}).values())
+                avg      = round(sum(s["score"] for s in subs)/len(subs), 1) if subs else 0
+                passed   = sum(1 for s in subs if s.get("passed"))
+                result.append({
+                    "student": k, "submitted": len(subs),
+                    "passed": passed, "avg_score": avg,
+                    "quiz_ball": progress,
+                    "total_ball": int(avg * 0.6 + progress * 0.4),
+                })
+    except:
+        pass
+    return sorted(result, key=lambda x: x["total_ball"], reverse=True)
+
+def lms_get_all_db_students() -> dict:
+    students = {}
+    try:
+        with shelve.open(DB_PATH) as db:
+            for k in db.keys():
+                if k.startswith("__"): continue
+                d = db[k]
+                if d.get("role") == "student" or d.get("password"):
+                    students[k] = d
+    except:
+        pass
+    return students
+
+# ══════════════════════════════════════════════
+# TAB 13 — VAZIFALAR (LMS)
+# ══════════════════════════════════════════════
+with tab_assignments:
+    st.markdown(f"""
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      <span style="font-size:26px">📋</span>
+      <span style="color:{T['txt_p']};font-size:18px;font-weight:700">Vazifalar (LMS)</span>
+      <span class="badge {'b-blue' if CURRENT_ROLE in ('admin','teacher') else 'b-green'}">
+        {'👨‍🏫 O\'qituvchi' if CURRENT_ROLE in ('admin','teacher') else '👨‍🎓 Student'}
+      </span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── O'QITUVCHI / ADMIN ────────────────────────────────────
+    if CURRENT_ROLE in ("admin", "teacher"):
+        tc1, tc2, tc3 = st.tabs(["➕ Yangi vazifa", "📋 Vazifalar ro'yxati", "📊 Barcha natijalar"])
+
+        with tc1:
+            with st.form("new_assign_form", clear_on_submit=True):
+                a_title = st.text_input("📌 Sarlavha*:", placeholder="Fibonacci funksiyasi")
+                a_desc  = st.text_area("📝 Vazifa tavsifi*:", height=120,
+                    placeholder="1 dan n gacha Fibonacci sonlarini qaytaruvchi funksiya yozing...")
+                f1, f2, f3 = st.columns(3)
+                with f1: a_diff  = st.selectbox("🎯 Qiyinlik:", ["🟢 Oson","🟡 O'rta","🔴 Qiyin"])
+                with f2: a_topic = st.text_input("📂 Mavzu:", placeholder="Rekursiya")
+                with f3: a_score = st.number_input("🏆 Max ball:", 10, 100, 100, 10)
+                a_hint     = st.text_input("💡 Maslahat:", placeholder="yield ishlatib ko'ring")
+                a_deadline = st.text_input("⏰ Deadline:", placeholder="2024-12-31")
+                if st.form_submit_button("✅ Vazifa yaratish", use_container_width=True):
+                    if a_title.strip() and a_desc.strip():
+                        nid = lms_save_assignment(
+                            st.session_state.username, a_title, a_desc,
+                            a_diff, a_topic, a_hint, int(a_score), a_deadline)
+                        st.success(f"✅ Vazifa #{nid} yaratildi! Barcha studentlar ko'ra oladi.")
+                        st.balloons()
+                    else:
+                        st.warning("⚠️ Sarlavha va tavsif majburiy!")
+
+        with tc2:
+            assigns = lms_get_assignments()
+            if not assigns:
+                st.info("📭 Hali vazifalar yo'q. '➕ Yangi vazifa' dan yarating.")
+            else:
+                st.metric("📋 Jami faol vazifalar", len(assigns))
+                for a in assigns:
+                    with st.expander(f"#{a['id']} {a['title']} | {a['difficulty']} | {a['max_score']} ball"):
+                        st.markdown(f"**📝 Tavsif:** {a['desc']}")
+                        if a.get("hint"):     st.markdown(f"**💡 Maslahat:** `{a['hint']}`")
+                        if a.get("deadline"): st.markdown(f"**⏰ Deadline:** {a['deadline']}")
+                        if a.get("topic"):    st.markdown(f"**📂 Mavzu:** {a['topic']}")
+                        st.caption(f"👨‍🏫 {a['teacher']} | 📅 {a['date']} {a['created']}")
+                        if st.button(f"🗑️ O'chirish", key=f"del_a_{a['id']}"):
+                            lms_delete_assignment(a["id"])
+                            st.success("✅ Vazifa o'chirildi!")
+                            st.rerun()
+
+        with tc3:
+            all_subs = lms_all_submissions()
+            if not all_subs:
+                st.info("📭 Hali topshirishlar yo'q.")
+            else:
+                r1,r2,r3,r4 = st.columns(4)
+                r1.metric("📤 Jami",        len(all_subs))
+                r2.metric("✅ O'tganlar",   sum(1 for s in all_subs if s.get("passed")))
+                r3.metric("❌ O'tmaganlar", sum(1 for s in all_subs if not s.get("passed")))
+                avg_all = round(sum(s["score"] for s in all_subs)/len(all_subs), 1)
+                r4.metric("📈 O'rtacha",    f"{avg_all}%")
+                st.divider()
+
+                for s in sorted(all_subs, key=lambda x: x.get("date",""), reverse=True):
+                    icon = "✅" if s.get("passed") else "❌"
+                    with st.expander(f"{icon} {s['student']} — {s.get('assignment_title','?')} — {s['score']}% | {s.get('date','')}"):
+                        cl, cr = st.columns(2)
+                        with cl:
+                            st.markdown(f"**Ball:** `{s['score']}/100`")
+                            st.markdown(f"**Holat:** {'✅ O\'tdi' if s.get('passed') else '❌ O\'tmadi'}")
+                            st.markdown(f"**Vaqt:** {s.get('time','')} {s.get('date','')}")
+                        with cr:
+                            if s.get("feedback"):
+                                st.markdown(f"**🤖 AI fikr:** {s['feedback'][:200]}")
+                        if s.get("code"):
+                            st.code(s["code"][:600], language="python")
+                        if s.get("stdout"):
+                            st.markdown(f'<div class="run-out">{s["stdout"][:300]}</div>', unsafe_allow_html=True)
+                        if s.get("stderr"):
+                            st.markdown(f'<div class="run-out run-err">{s["stderr"][:200]}</div>', unsafe_allow_html=True)
+
+        # Student qo'shish (teacher uchun)
+        st.divider()
+        st.markdown("#### ➕ Yangi student qo'shish")
+        with st.form("add_student_form", clear_on_submit=True):
+            ns1, ns2 = st.columns(2)
+            with ns1: ns_name = st.text_input("👤 Username:", placeholder="ali")
+            with ns2: ns_pass = st.text_input("🔑 Parol:",    placeholder="ali123")
+            if st.form_submit_button("➕ Qo'shish", use_container_width=True):
+                if ns_name.strip() and ns_pass.strip():
+                    nc = ns_name.strip().lower()
+                    d  = db_get(nc)
+                    if d.get("password"):
+                        st.warning(f"⚠️ '{nc}' allaqachon mavjud!")
+                    else:
+                        d["role"]     = "student"
+                        d["password"] = ns_pass.strip()
+                        d["created"]  = fmt_time()
+                        db_set(nc, d)
+                        st.success(f"✅ Student '{nc}' qo'shildi!")
+                        st.rerun()
+                else:
+                    st.warning("⚠️ Username va parol kiriting!")
+
+    # ── STUDENT ──────────────────────────────────────────────
+    else:
+        assigns  = lms_get_assignments()
+        my_subs  = lms_my_submissions(st.session_state.username)
+        done_ids = {s["assignment_id"] for s in my_subs}
+
+        if "lms_sel" not in st.session_state:  st.session_state.lms_sel    = None
+        if "lms_code" not in st.session_state: st.session_state.lms_code   = ""
+        if "lms_res" not in st.session_state:  st.session_state.lms_res    = None
+        if "lms_run" not in st.session_state:  st.session_state.lms_run    = None
+
+        if not assigns:
+            st.info("📭 Hali o'qituvchi tomonidan vazifa berilmagan.")
+        else:
+            s1,s2,s3 = st.columns(3)
+            s1.metric("📋 Jami vazifa",    len(assigns))
+            s2.metric("✅ Topshirganlar",  len(done_ids))
+            s3.metric("⏳ Qolganlar",      len(assigns) - len(done_ids))
+            st.divider()
+
+            if st.session_state.lms_sel is None:
+                # Vazifalar ro'yxati
+                for a in assigns:
+                    done = a["id"] in done_ids
+                    best = max((s["score"] for s in my_subs if s["assignment_id"]==a["id"]), default=None)
+                    with st.expander(
+                        f"{'✅' if done else '📝'} #{a['id']} {a['title']} "
+                        f"| {a['difficulty']} | {a['max_score']} ball"
+                        + (f" | 🏆 {best}%" if best is not None else "")
+                    ):
+                        st.markdown(f"**📝** {a['desc']}")
+                        if a.get("hint"):     st.markdown(f"**💡 Maslahat:** `{a['hint']}`")
+                        if a.get("deadline"): st.markdown(f"**⏰ Deadline:** {a['deadline']}")
+                        st.caption(f"👨‍🏫 {a['teacher']} | {a['date']}")
+                        if st.button("✏️ Yechishni boshlash" if not done else "🔄 Qayta yechish",
+                                     key=f"start_a_{a['id']}"):
+                            st.session_state.lms_sel  = a
+                            st.session_state.lms_code = f"# {a['title']}\n# {a['desc'][:60]}...\n\ndef solution():\n    pass\n"
+                            st.session_state.lms_res  = None
+                            st.session_state.lms_run  = None
+                            st.rerun()
+            else:
+                # Yechim yozish sahifasi
+                a = st.session_state.lms_sel
+                if st.button("← Orqaga"):
+                    st.session_state.lms_sel = None
+                    st.rerun()
+
+                st.markdown(f"### #{a['id']} {a['title']}")
+                st.markdown(f'<div class="card-blue"><strong>📝 Vazifa:</strong> {a["desc"]}</div>',
+                            unsafe_allow_html=True)
+                if a.get("hint"):
+                    st.markdown(f'<div class="card-orange" style="margin-top:8px">💡 <code>{a["hint"]}</code></div>',
+                                unsafe_allow_html=True)
+                st.markdown("")
+
+                st.session_state.lms_code = st.text_area(
+                    "📝 Yechimingizni yozing:", value=st.session_state.lms_code,
+                    height=280, key="lms_editor")
+
+                b1, b2, b3 = st.columns(3)
+                with b1:
+                    if st.button("▶️ Sinash", use_container_width=True, key="lms_test"):
+                        if st.session_state.lms_code.strip():
+                            with st.spinner("⚙️ Bajarilmoqda..."):
+                                o, e = run_piston(st.session_state.lms_code)
+                            st.session_state.lms_run = {"out": o, "err": e}
+                with b2:
+                    if st.button("📤 Topshirish", use_container_width=True, key="lms_sub"):
+                        if st.session_state.lms_code.strip():
+                            with st.spinner("🤖 AI baholayapti..."):
+                                r = lms_submit(st.session_state.username, a["id"],
+                                               st.session_state.lms_code)
+                            st.session_state.lms_res = r
+                            if r.get("passed"): st.balloons()
+                with b3:
+                    if st.button("💡 AI maslahat", use_container_width=True, key="lms_hint"):
+                        with st.spinner("💡 Maslahat..."):
+                            h = simple_ai(
+                                f"Vazifa: {a['desc']}\nKod:\n{st.session_state.lms_code}",
+                                "Yo'naltirilgan maslahat ber, javobni aytma. O'zbek tilida qisqa.",
+                                model_choice)
+                        st.markdown(f'<div class="card-green">{h}</div>', unsafe_allow_html=True)
+
+                # Runner natijasi
+                if st.session_state.lms_run:
+                    rv = st.session_state.lms_run
+                    if rv.get("out"):
+                        st.markdown(f'<div class="run-out">{rv["out"]}</div>', unsafe_allow_html=True)
+                    if rv.get("err"):
+                        st.markdown(f'<div class="run-out run-err">{rv["err"]}</div>', unsafe_allow_html=True)
+
+                # Topshirish natijasi
+                if st.session_state.lms_res:
+                    r = st.session_state.lms_res
+                    clr = "#3fb950" if r.get("passed") else "#f85149"
+                    ico = "✅" if r.get("passed") else "❌"
+                    st.markdown(f"""
+                    <div style="background:{clr}22;border:2px solid {clr};border-radius:12px;
+                                padding:20px;margin-top:16px;text-align:center">
+                      <div style="font-size:40px">{ico}</div>
+                      <h3 style="color:{clr};margin:8px 0">Ball: {r['score']}/100</h3>
+                      <p style="color:{T['txt_s']};font-size:13px;line-height:1.7">{r.get('feedback','')}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+            # Mening natijalarim
+            if my_subs:
+                st.divider()
+                st.markdown("#### 📜 Mening natijalarim")
+                for s in reversed(my_subs[-8:]):
+                    ic = "✅" if s.get("passed") else "❌"
+                    st.markdown(f"{ic} **{s.get('assignment_title','?')}** — **{s['score']}%** | {s.get('date','')} {s.get('time','')}")
+
+
+# ══════════════════════════════════════════════
+# TAB 14 — SINF PANELI
+# ══════════════════════════════════════════════
+with tab_classroom:
+    st.markdown(f"""
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+      <span style="font-size:26px">🏫</span>
+      <span style="color:{T['txt_p']};font-size:18px;font-weight:700">Sinf Paneli</span>
+      <span class="badge b-orange">Live</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    board = lms_leaderboard()
+
+    # ── O'QITUVCHI ──────────────────────────────────────────
+    if CURRENT_ROLE in ("admin", "teacher"):
+        all_subs_t = lms_all_submissions()
+        avg_t = round(sum(s["score"] for s in all_subs_t)/len(all_subs_t),1) if all_subs_t else 0
+        db_studs = lms_get_all_db_students()
+
+        tm1,tm2,tm3,tm4 = st.columns(4)
+        tm1.metric("👨‍🎓 Studentlar",    len(db_studs))
+        tm2.metric("📤 Topshirishlar",  len(all_subs_t))
+        tm3.metric("📈 O'rtacha ball",  f"{avg_t}%")
+        tm4.metric("📋 Faol vazifalar", len(lms_get_assignments()))
+        st.divider()
+
+    # ── LEADERBOARD ─────────────────────────────────────────
+    st.markdown("### 🏆 Leaderboard")
+    if not board:
+        st.info("Hali ma'lumotlar yo'q. Studentlar vazifa yechsin!")
+    else:
+        medals = ["🥇","🥈","🥉"]
+        for i, row in enumerate(board):
+            is_me  = row["student"] == st.session_state.username
+            medal  = medals[i] if i < 3 else f"#{i+1}"
+            border = f"border-left:3px solid {T['green']};" if is_me else ""
+            me_txt = f'<span style="color:{T["green"]}"> ← Sen</span>' if is_me else ""
+            st.markdown(f"""
+            <div style="background:{T['bg_s']};border:1px solid {T['bdr']};{border}
+                        border-radius:10px;padding:12px 16px;margin-bottom:8px">
+              <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+                <span style="font-size:22px;min-width:32px">{medal}</span>
+                <span style="color:{T['txt_p']};font-weight:{'700' if is_me else '500'};flex:1">
+                  {row['student']}{me_txt}
+                </span>
+                <span style="color:{T['txt_s']};font-size:13px">📤 {row['submitted']}</span>
+                <span style="color:{T['txt_s']};font-size:13px">✅ {row['passed']}</span>
+                <span style="color:{T['txt_s']};font-size:13px">📈 {row['avg_score']}%</span>
+                <span style="color:{T['green']};font-weight:700;font-size:14px">⭐ {row['total_ball']}</span>
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # ── O'QITUVCHI: STUDENT TAHLILI ─────────────────────────
+    if CURRENT_ROLE in ("admin", "teacher") and board:
+        st.divider()
+        st.markdown("### 🔍 Student tahlili")
+        sel = st.selectbox("Student tanlang:", [r["student"] for r in board], key="cls_sel")
+        if sel:
+            sd   = db_get(sel)
+            ssub = sd.get("submissions", [])
+            spro = sd.get("progress", {})
+            sl, sr = st.columns(2)
+            with sl:
+                st.markdown(f"**👨‍🎓 {sel}**")
+                st.metric("📤 Topshirishlar", len(ssub))
+                st.metric("✅ O'tganlar",      sum(1 for s in ssub if s.get("passed")))
+                st.metric("📈 O'rtacha",
+                    f"{round(sum(s['score'] for s in ssub)/len(ssub),1) if ssub else 0}%")
+            with sr:
+                st.markdown("**📊 Quiz progress:**")
+                if spro:
+                    for topic, ball in sorted(spro.items(), key=lambda x: x[1], reverse=True):
+                        pct = min(100, int(ball/12*100))
+                        st.markdown(f"• {topic}: **{ball}** ball")
+                        st.markdown(f'<div style="height:6px;border-radius:3px;background:{T["bdr"]};margin-bottom:8px"><div style="height:6px;border-radius:3px;background:linear-gradient(90deg,{T["green"]},{T["blue"]});width:{pct}%"></div></div>', unsafe_allow_html=True)
+                else:
+                    st.info("Quiz hali yo'q")
+            if ssub:
+                st.markdown("**📜 Topshirishlar:**")
+                for s in reversed(ssub[-5:]):
+                    ic = "✅" if s.get("passed") else "❌"
+                    st.markdown(f"{ic} {s.get('assignment_title','?')} — **{s['score']}%** | {s.get('date','')}")
+
+    # ── STUDENT: O'Z STATISTIKASI ───────────────────────────
+    if CURRENT_ROLE == "student":
+        my_s2  = lms_my_submissions(st.session_state.username)
+        my_pro = st.session_state.progress_topics
+        my_rank = next((i+1 for i,r in enumerate(board) if r["student"]==st.session_state.username), "—")
+        my_ball = next((r["total_ball"] for r in board if r["student"]==st.session_state.username), 0)
+
+        st.divider()
+        st.markdown("### 📊 Mening statistikam")
+        ms1,ms2,ms3,ms4 = st.columns(4)
+        ms1.metric("📤 Topshirganlar",  len(my_s2))
+        ms2.metric("✅ O'tganlar",       sum(1 for s in my_s2 if s.get("passed")))
+        ms3.metric("📈 O'rtacha",
+            f"{round(sum(s['score'] for s in my_s2)/len(my_s2),1) if my_s2 else 0}%")
+        ms4.metric("🏆 Reyting",        f"#{my_rank}")
+
+        level = ("🏆 Expert" if my_ball>=200 else "🥈 O'rta" if my_ball>=80 else "🥉 Boshlang'ich")
+        st.markdown(f"""
+        <div class="card-green" style="text-align:center;padding:24px;margin-top:16px">
+          <div style="font-size:36px">{level.split()[0]}</div>
+          <h3 style="color:{T['txt_p']};margin:8px 0">{level}</h3>
+          <p style="color:{T['txt_s']}">Jami ball: {my_ball} | Reyting: #{my_rank}</p>
+        </div>
+        """, unsafe_allow_html=True)
